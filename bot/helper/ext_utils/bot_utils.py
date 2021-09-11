@@ -184,7 +184,7 @@ def get_readable_message():
                         msg += f" || <b>➜ Seeds:</b> {download.aria_download().num_seeders}"
                     except:
                         pass
-                    msg += f"\n<b>➜ To Stop :</b> <code>/{BotCommands.CancelMirror} {download.gid()}</code>"
+                    msg += f"\n<b>➜ To Stop :</b> <code>/{BotCommands.CancelMirror} {download.gid()}</code>\n\n<b>════════════════════════════════</b>"
                 msg += "\n\n"
                 if STATUS_LIMIT is not None and INDEX >= COUNT + STATUS_LIMIT:
                         break
