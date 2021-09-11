@@ -194,7 +194,7 @@ def get_readable_message():
             if dick_no > STATUS_LIMIT:
                 msg += f"**Page: {PAGE_NO}/{pages} || Tasks: {dick_no}**\n"
                 buttons = button_build.ButtonMaker()
-                buttons.sbutton("⬅️", "Previous")
+                buttons.sbutton("⬅️", "Prev")
                 buttons.sbutton("➡️", "Next")
                 button = InlineKeyboardMarkup(buttons.build_menu(2))
                 return msg, button
