@@ -192,7 +192,7 @@ def get_readable_message():
             if INDEX > COUNT + STATUS_LIMIT:
                 return None, None
             if dick_no > STATUS_LIMIT:
-                msg += f"**Page: {PAGE_NO}/{pages} || Tasks: {dick_no}**\n"
+                msg += f"<b>Page: {PAGE_NO}/{pages} || Tasks: {dick_no}</b>\n"
                 buttons = button_build.ButtonMaker()
                 buttons.sbutton("⬅️", "Prev")
                 buttons.sbutton("➡️", "Next")
