@@ -162,9 +162,9 @@ def get_readable_message():
                     MirrorStatus.STATUS_ARCHIVING,
                     MirrorStatus.STATUS_EXTRACTING,
                 ]:
-                    msg += f"\n<b>➜ Progress :</b> <code>{get_progress_bar_string(download)}</code> **{download.progress()}**"
+                    msg += f"\n<b>➜ Progress :</b> <code>{get_progress_bar_string(download)} {download.progress()}</code>"
                     if download.status() == MirrorStatus.STATUS_DOWNLOADING:
-                        msg += f"\n<b>➜ Downloaded :</b> **{get_readable_file_size(download.processed_bytes())}**"
+                        msg += f"\n<b>➜ Downloaded :</b> <code>{get_readable_file_size(download.processed_bytes())}</code>"
                     elif download.status() == MirrorStatus.STATUS_CLONING:
                         msg += f"\n<b>➜ Cloned:</b> {get_readable_file_size(download.processed_bytes())} Of {download.size()}"
                     else:
@@ -173,7 +173,7 @@ def get_readable_message():
                             f" || <b>➜ ETA:</b> {download.eta()} "
                     # if hasattr(download, 'is_torrent'):
                     try:
-                        msg += f"\n<b>➜ {download.status()} For :</b> <b>{download.message.from_user.first_name}</b>"
+                        msg += f"\n<b>➜ {download.status()} For :</b> <code>{download.message.from_user.first_name}</code>"
                     except:
                         pass
                     try:
