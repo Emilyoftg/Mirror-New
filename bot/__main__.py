@@ -2,36 +2,36 @@ import shutil, psutil
 import signal
 import os
 import asyncio
-import importlib
+
+from pyrogram import idle, filters, types, emoji
+from sys import executable
+from datetime import datetime
 import pytz
 import time
 import threading
-from pyrogram import idle, filters, types, emoji
-from telegram.error import BadRequest, Unauthorized
-from telegram.utils.helpers import escape_markdown
-from telegram.ext import Filters, InlineQueryHandler, MessageHandler, CommandHandler, CallbackQueryHandler, CallbackContext
-from bot import *
-from sys import executable
-
-from telegram import *
-from telegram.ext import CommandHandler
-from wserver import start_server_async
-from datetime import datetime
 from quoters import Quote
+
+from telegram.error import BadRequest, Unauthorized
+from telegram import ParseMode, BotCommand, InputTextMessageContent, InlineQueryResultArticle, Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import Filters, InlineQueryHandler, MessageHandler, CommandHandler, CallbackQueryHandler, CallbackContext
+from telegram.utils.helpers import escape_markdown
+
+from telegram.error import BadRequest, Unauthorized
+from telegram.ext import CommandHandler
+from telegraph import Telegraph
+from wserver import start_server_async
+from bot import bot, app, dispatcher, updater,  IMAGE_URL, CHANNEL_LINK, SUPPORT_LINK, botStartTime, IGNORE_PENDING_REQUESTS, IS_VPS, PORT, alive, web, OWNER_ID, AUTHORIZED_CHATS, telegraph_token, RESTARTED_GROUP_ID, RESTARTED_GROUP_ID2, TIMEZONE
 from bot.helper.ext_utils import fs_utils
 from bot.helper.telegram_helper.bot_commands import BotCommands
 from bot.helper.telegram_helper.message_utils import *
 from .helper.ext_utils.bot_utils import get_readable_file_size, get_readable_time
 from .helper.telegram_helper.filters import CustomFilters
 from bot.helper.telegram_helper import button_build
-from bot.helper import get_text, check_heroku
-from .modules import authorize, list, cancel_mirror, mirror_status, mirror, clone, watch, delete, usage, count, reboot
+from .modules import authorize, list, cancel_mirror, mirror_status, mirror, clone, watch, delete, count, leech_settings
 now=datetime.now(pytz.timezone(f'{TIMEZONE}'))
-
 
 def stats(update, context):
     currentTime = get_readable_time(time.time() - botStartTime)
-    current = now.strftime('%d/%m/%Y\n%I:%M:%S %p')
     total, used, free = shutil.disk_usage('.')
     total = get_readable_file_size(total)
     used = get_readable_file_size(used)
@@ -41,14 +41,14 @@ def stats(update, context):
     cpuUsage = psutil.cpu_percent(interval=0.5)
     memory = psutil.virtual_memory().percent
     disk = psutil.disk_usage('/').percent
-    stats = f'<b>Bot Uptime</b>\n<code>{currentTime}</code>\n\n' \
+    stats = f'<b>Bot Uptime:</b> <code>{currentTime}</code>\n' \
             f'<b>Total Disk Space:</b> <code>{total}</code>\n' \
-            f'<b>Used:</b> <code>{used}</code>\n' \
+            f'<b>Used:</b> <code>{used}</code> ' \
             f'<b>Free:</b> <code>{free}</code>\n\n' \
             f'<b>Upload:</b> <code>{sent}</code>\n' \
             f'<b>Download:</b> <code>{recv}</code>\n\n' \
-            f'<b>CPU:</b> <code>{cpuUsage}%</code>\n' \
-            f'<b>RAM:</b> <code>{memory}%</code>\n' \
+            f'<b>CPU:</b> <code>{cpuUsage}%</code> ' \
+            f'<b>RAM:</b> <code>{memory}%</code> ' \
             f'<b>DISK:</b> <code>{disk}%</code>'
     sendMessage(stats, context.bot, update)
 
@@ -82,111 +82,140 @@ def restart(update, context):
         f.write(f"{restart_message.chat.id}\n{restart_message.message_id}\n")
     fs_utils.clean_all()
     alive.terminate()
+    web.terminate()
     os.execl(executable, executable, "-m", "bot")
 
 def log(update, context):
     sendLogFile(context.bot, update)
 
+help_string_telegraph = f'''<br>
+<b>/{BotCommands.AuthorizeCommand}</b>: Authorize a chat or a user to use the bot (Can only be invoked by Owner & Sudo of the bot)
+<br><br>
+<b>/{BotCommands.UnAuthorizeCommand}</b>: Unauthorize a chat or a user to use the bot (Can only be invoked by Owner & Sudo of the bot)
+<br><br>
+<b>/{BotCommands.AuthorizedUsersCommand}</b>: Show authorized users (Only Owner & Sudo)
+<br><br>
+<b>/{BotCommands.AddSudoCommand}</b>: Add sudo user (Only Owner)
+<br><br>
+<b>/{BotCommands.RmSudoCommand}</b>: Remove sudo users (Only Owner)
+<br><br>
+<b>/{BotCommands.RestartCommand}</b>: Restart the bot
+<br><br>
+<b>/{BotCommands.LogCommand}</b>: Get a log file of the bot. Handy for getting crash reports
+<br><br>
+<b>/{BotCommands.HelpCommand}</b>: To get this message
+<br><br>
+<b>/{BotCommands.MirrorCommand}</b> [download_url][magnet_link]: Start mirroring the link to Google Drive.
+<br><br>
+<b>/{BotCommands.TarMirrorCommand}</b> [download_url][magnet_link]: Start mirroring and upload the archived (.tar) version of the download
+<br><br>
+<b>/{BotCommands.ZipMirrorCommand}</b> [download_url][magnet_link]: Start mirroring and upload the archived (.zip) version of the download
+<br><br>
+<b>/{BotCommands.UnzipMirrorCommand}</b> [download_url][magnet_link]: Starts mirroring and if downloaded file is any archive, extracts it to Google Drive
+<br><br>
+<b>/{BotCommands.QbMirrorCommand}</b> [magnet_link]: Start Mirroring using qBittorrent, Use <b>/{BotCommands.QbMirrorCommand} s</b> to select files before downloading
+<br><br>
+<b>/{BotCommands.QbTarMirrorCommand}</b> [magnet_link]: Start mirroring using qBittorrent and upload the archived (.tar) version of the download
+<br><br>
+<b>/{BotCommands.QbZipMirrorCommand}</b> [magnet_link]: Start mirroring using qBittorrent and upload the archived (.zip) version of the download
+<br><br>
+<b>/{BotCommands.QbUnzipMirrorCommand}</b> [magnet_link]: Starts mirroring using qBittorrent and if downloaded file is any archive, extracts it to Google Drive
+<br><br>
+<b>/{BotCommands.LeechCommand}</b>: This command should be used as reply to Magnet link, Torrent link, or Direct link. [this command will SPAM the chat and send the downloads a seperate files, if there is more than one file, in the specified Torrent]
+<br><br>
+<b>/{BotCommands.TarLeechCommand}</b>: This command should be used as reply to Magnet link, Torrent link, or Direct link and upload it as (.tar). [this command will SPAM the chat and send the downloads a seperate files, if there is more than one file, in the specified Torrent]
+<br><br>
+<b>/{BotCommands.ZipLeechCommand}</b>: This command should be used as reply to Magnet link, Torrent link, or Direct link and upload it as (.zip). [this command will SPAM the chat and send the downloads a seperate files, if there is more than one file, in the specified Torrent]
+<br><br>
+<b>/{BotCommands.UnzipLeechCommand}</b>: This command should be used as reply to Magnet link, Torrent link, or Direct link and if file is any archive, extracts it. [this command will SPAM the chat and send the downloads a seperate files, if there is more than one file, in the specified Torrent]
+<br><br>
+<b>/{BotCommands.QbLeechCommand}</b>: This command should be used as reply to Magnet link, Torrent link, or Direct link using qBittorrent. [this command will SPAM the chat and send the downloads a seperate files, if there is more than one file, in the specified Torrent]
+<br><br>
+<b>/{BotCommands.QbTarLeechCommand}</b>: This command should be used as reply to Magnet link, Torrent link, or Direct link and upload it as (.tar) using qBittorrent. [this command will SPAM the chat and send the downloads a seperate files, if there is more than one file, in the specified Torrent]
+<br><br>
+<b>/{BotCommands.QbZipLeechCommand}</b>: This command should be used as reply to Magnet link, Torrent link, or Direct link and upload it as (.zip) using qBittorrent. [this command will SPAM the chat and send the downloads a seperate files, if there is more than one file, in the specified Torrent]
+<br><br>
+<b>/{BotCommands.QbUnzipLeechCommand}</b>: This command should be used as reply to Magnet link, Torrent link, or Direct link and if file is any archive, extracts it using qBittorrent. [this command will SPAM the chat and send the downloads a seperate files, if there is more than one file, in the specified Torrent]
+<br><br>
+<b>/{BotCommands.CloneCommand}</b> [drive_url]: Copy file/folder to Google Drive
+<br><br>
+<b>/{BotCommands.CountCommand}</b> [drive_url]: Count file/folder of Google Drive Links
+<br><br>
+<b>/{BotCommands.DeleteCommand}</b> [drive_url]: Delete file from Google Drive (Only Owner & Sudo)
+<br><br>
+<b>/{BotCommands.WatchCommand}</b> [youtube-dl supported link]: Mirror through youtube-dl. Click <b>/{BotCommands.WatchCommand}</b> for more help
+<br><br>
+<b>/{BotCommands.TarWatchCommand}</b> [youtube-dl supported link]: Mirror through youtube-dl and tar before uploading
+<br><br>
+<b>/{BotCommands.ZipWatchCommand}</b> [youtube-dl supported link]: Mirror through youtube-dl and zip before uploading
+<br><br>
+<b>/{BotCommands.LeechWatchCommand}</b>: Leech through youtube-dl 
+<br><br>
+<b>/{BotCommands.LeechTarWatchCommand}</b>: Leech through youtube-dl and tar before uploading 
+<br><br>
+<b>/{BotCommands.LeechZipWatchCommand}</b>: Leech through youtube-dl and zip before uploading 
+<br><br>
+<b>/{BotCommands.LeechSetCommand}</b>: Leech Settings 
+<br><br>
+<b>/{BotCommands.SetThumbCommand}</b>: Reply to photo to set it as Thumbnail
+<br><br>
+<b>/{BotCommands.CancelMirror}</b>: Reply to the message by which the download was initiated and that download will be cancelled
+<br><br>
+<b>/{BotCommands.CancelAllCommand}</b>: Cancel all running tasks
+<br><br>
+<b>/{BotCommands.ListCommand}</b> [search term]: Searches the search term in the Google Drive, If found replies with the link
+<br><br>
+<b>/{BotCommands.StatusCommand}</b>: Shows a status of all the downloads
+<br><br>
+<b>/{BotCommands.StatsCommand}</b>: Show Stats of the machine the bot is hosted on
+'''
+help = Telegraph(access_token=telegraph_token).create_page(
+        title='Mirrorbot Help',
+        author_name='Mirrorbot',
+        author_url='https://github.com/anime-republic/MIRROR-HUNTER',
+        html_content=help_string_telegraph,
+    )["path"]
+
+help_string = f'''
+Raad Command Below
+'''
 
 def bot_help(update, context):
-    help_string_adm = f'''
-/{BotCommands.HelpCommand}: To get this message
+    button = button_build.ButtonMaker()
+    button.buildbutton("Available Commands", f"https://telegra.ph/{help}")
+    reply_markup = InlineKeyboardMarkup(button.build_menu(1))
+    sendMarkup(help_string, context.bot, update, reply_markup)
 
-/{BotCommands.MirrorCommand} [download_url][magnet_link]: Start mirroring the link to Google Drive.
-
-<code>/{BotCommands.MirrorCommand} qb</code> to mirror with qBittorrent.
-
-/{BotCommands.TarMirrorCommand} [download_url][magnet_link]: Start mirroring and upload the archived (.tar) version of the download
-
-/{BotCommands.ZipMirrorCommand} [download_url][magnet_link]: Start mirroring and upload the archived (.zip) version of the download
-
-/{BotCommands.UnzipMirrorCommand} [download_url][magnet_link]: Starts mirroring and if downloaded file is any archive, extracts it to Google Drive
-
-/{BotCommands.CloneCommand} [drive_url]: Copy file/folder to Google Drive
-
-/{BotCommands.CountCommand} [drive_url]: Count file/folder of Google Drive Links
-
-/{BotCommands.DeleteCommand} [drive_url]: Delete file from Google Drive (Only Owner & Sudo)
-
-/{BotCommands.WatchCommand} [youtube-dl supported link]: Mirror through youtube-dl. Click /{BotCommands.WatchCommand} for more help
-
-/{BotCommands.TarWatchCommand} [youtube-dl supported link]: Mirror through youtube-dl and tar before uploading
-
-/{BotCommands.CancelMirror}: Reply to the message by which the download was initiated and that download will be cancelled
-
-/{BotCommands.CancelAllCommand}: Cancel all running tasks
-
-/{BotCommands.ListCommand} [search term]: Searches the search term in the Google Drive, If found replies with the link
-
-/{BotCommands.StatusCommand}: Shows a status of all the downloads
-
-/{BotCommands.StatsCommand}: Show Stats of the machine the bot is hosted on
-
-/{BotCommands.AuthorizeCommand}: Authorize a chat or a user to use the bot (Can only be invoked by Owner & Sudo of the bot)
-
-/{BotCommands.UnAuthorizeCommand}: Unauthorize a chat or a user to use the bot (Can only be invoked by Owner & Sudo of the bot)
-
-/{BotCommands.AuthorizedUsersCommand}: Show authorized users (Only Owner & Sudo)
-
-/{BotCommands.AddSudoCommand}: Add sudo user (Only Owner)
-
-/{BotCommands.RmSudoCommand}: Remove sudo users (Only Owner)
-
-/{BotCommands.RestartCommand}: Restart the bot
-
-/{BotCommands.UsageCommand}: To see Heroku Dyno Stats (Owner & Sudo only)
-
-/{BotCommands.LogCommand}: Get a log file of the bot. Handy for getting crash reports
-'''
-
-    help_string = f'''
-/{BotCommands.HelpCommand}: To get this message
-
-/{BotCommands.MirrorCommand} [download_url][magnet_link]: Start mirroring the link to Google Drive.
-
-<code>/{BotCommands.MirrorCommand} qb</code> to mirror with qBittorrent.
-
-/{BotCommands.TarMirrorCommand} [download_url][magnet_link]: Start mirroring and upload the archived (.tar) version of the download
-
-/{BotCommands.ZipMirrorCommand} [download_url][magnet_link]: Start mirroring and upload the archived (.zip) version of the download
-
-/{BotCommands.UnzipMirrorCommand} [download_url][magnet_link]: Starts mirroring and if downloaded file is any archive, extracts it to Google Drive
-
-/{BotCommands.CloneCommand} [drive_url]: Copy file/folder to Google Drive
-
-/{BotCommands.CountCommand} [drive_url]: Count file/folder of Google Drive Links
-
-/{BotCommands.WatchCommand} [youtube-dl supported link]: Mirror through youtube-dl. Click /{BotCommands.WatchCommand} for more help
-
-/{BotCommands.TarWatchCommand} [youtube-dl supported link]: Mirror through youtube-dl and tar before uploading
-
-/{BotCommands.CancelMirror}: Reply to the message by which the download was initiated and that download will be cancelled
-
-/{BotCommands.ListCommand} [search term]: Searches the search term in the Google Drive, If found replies with the link
-
-/{BotCommands.StatusCommand}: Shows a status of all the downloads
-
-/{BotCommands.UsageCommand}: To see Heroku Dyno Stats (Owner & Sudo only).
-
-/{BotCommands.StatsCommand}: Show Stats of the machine the bot is hosted on
-'''
-
-    if CustomFilters.sudo_user(update) or CustomFilters.owner_filter(update):
-        sendMessage(help_string_adm, context.bot, update)
-    else:
-        sendMessage(help_string, context.bot, update)
 
 botcmds = [
         (f'{BotCommands.HelpCommand}','Get Detailed Help'),
         (f'{BotCommands.MirrorCommand}', 'Start Mirroring'),
         (f'{BotCommands.TarMirrorCommand}','Start mirroring and upload as .tar'),
-        (f'{BotCommands.UnzipMirrorCommand}','Extract files'),
         (f'{BotCommands.ZipMirrorCommand}','Start mirroring and upload as .zip'),
+        (f'{BotCommands.UnzipMirrorCommand}','Extract files'),
+        (f'{BotCommands.QbMirrorCommand}','Start Mirroring using qBittorrent'),
+        (f'{BotCommands.QbTarMirrorCommand}','Start mirroring and upload as .tar using qb'),
+        (f'{BotCommands.QbZipMirrorCommand}','Start mirroring and upload as .zip using qb'),
+        (f'{BotCommands.QbUnzipMirrorCommand}','Extract files using qBitorrent'),
         (f'{BotCommands.CloneCommand}','Copy file/folder to Drive'),
         (f'{BotCommands.CountCommand}','Count file/folder of Drive link'),
+        (f'{BotCommands.LeechSetCommand}','Setting for leech'),
+        (f'{BotCommands.SetThumbCommand}','Set thumb'),
+        (f'{BotCommands.LeechCommand}','Leech'),
+        (f'{BotCommands.TarLeechCommand}','Tar leech'),
+        (f'{BotCommands.UnzipLeechCommand}','Unzip leech'),
+        (f'{BotCommands.ZipLeechCommand}','Zip leech'),
+        (f'{BotCommands.QbLeechCommand}','Qbit leech'),
+        (f'{BotCommands.QbTarLeechCommand}','QbitTar leech'),
+        (f'{BotCommands.QbUnzipLeechCommand}','QbitUnzip leech'),
+        (f'{BotCommands.QbZipLeechCommand}','QbitZip leech'),
+        (f'{BotCommands.LeechWatchCommand}','Youtube leech'),
+        (f'{BotCommands.LeechTarWatchCommand}','Youtube Tar leech'),
+        (f'{BotCommands.LeechZipWatchCommand}','Youtube Zip leech'),
         (f'{BotCommands.DeleteCommand}','Delete file from Drive'),
         (f'{BotCommands.WatchCommand}','Mirror Youtube-dl support link'),
         (f'{BotCommands.TarWatchCommand}','Mirror Youtube playlist link as .tar'),
+        (f'{BotCommands.ZipWatchCommand}','Mirror Youtube playlist link as .zip'),
         (f'{BotCommands.CancelMirror}','Cancel a task'),
         (f'{BotCommands.CancelAllCommand}','Cancel all tasks'),
         (f'{BotCommands.ListCommand}','Searches files in Drive'),
@@ -196,10 +225,8 @@ botcmds = [
         (f'{BotCommands.LogCommand}','Get the Bot Log [owner/sudo only]'),
         (f'{BotCommands.AuthorizeCommand}','Auth chat [owner/sudo only]'),
         (f'{BotCommands.UnAuthorizeCommand}','Unauth chat [owner/sudo only]'),
-        (f'{BotCommands.UsageCommand}','See dyno [owner/sudo only]'),
         (f'{BotCommands.AddSudoCommand}','Add sudo [owner/sudo only]'),
-        (f'{BotCommands.RmSudoCommand}','Remove sudo [owner/sudo only]'),
-        (f'{BotCommands.RebootCommand}','Restart Heroku dyno [owner/sudo only]')
+        (f'{BotCommands.RmSudoCommand}','Remove sudo [owner/sudo only]')
     ]
 
 
@@ -231,21 +258,19 @@ def main():
                 "Bot isnt able to send message to support_chat, go and check!"
             )
         except BadRequest as e:
-            LOGGER.warning(e.message)            
-            
+            LOGGER.warning(e.message)
+    
     fs_utils.start_cleanup()
-
     if IS_VPS:
-        asyncio.get_event_loop().run_until_complete(start_server_async(SERVER_PORT))
-
+        asyncio.get_event_loop().run_until_complete(start_server_async(PORT))
     # Check if the bot is restarting
     if os.path.isfile(".restartmsg"):
         with open(".restartmsg") as f:
             chat_id, msg_id = map(int, f)
-        bot.edit_message_text("📶 𝐑𝐄𝐒𝐓𝐀𝐑𝐓 𝐒𝐔𝐂𝐂𝐄𝐒𝐒𝐅𝐔𝐋𝐋𝐘", chat_id, msg_id)
+        bot.edit_message_text("Restarted successfully!", chat_id, msg_id)
         os.remove(".restartmsg")
+    
     bot.set_my_commands(botcmds)
-
     start_handler = CommandHandler(BotCommands.StartCommand, start, run_async=True)
     restart_handler = CommandHandler(BotCommands.RestartCommand, restart,
                                      filters=CustomFilters.owner_filter | CustomFilters.sudo_user, run_async=True)
@@ -260,6 +285,7 @@ def main():
     dispatcher.add_handler(stats_handler)
     dispatcher.add_handler(log_handler)
     updater.start_polling(drop_pending_updates=IGNORE_PENDING_REQUESTS)
+    LOGGER.info("⚠️ If Any optional vars not be filled it will use Defaults vars")
     LOGGER.info("📶 Bot Started!")
     signal.signal(signal.SIGINT, fs_utils.exit_clean_up)
 

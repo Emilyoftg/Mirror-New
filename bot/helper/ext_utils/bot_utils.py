@@ -5,7 +5,7 @@ import time
 import math
 
 from bot.helper.telegram_helper.bot_commands import BotCommands
-from bot import *
+from bot import dispatcher, download_dict, download_dict_lock, STATUS_LIMIT, FINISHED_PROGRESS_STR, UNFINISHED_PROGRESS_STR
 from telegram import InlineKeyboardMarkup
 from telegram.ext import CallbackQueryHandler
 from bot.helper.telegram_helper import button_build, message_utils
@@ -21,18 +21,19 @@ PAGE_NO = 1
 
 
 class MirrorStatus:
-    STATUS_UPLOADING = "📤 ᴜᴘʟᴏᴀᴅɪɴɢ 📤"
-    STATUS_DOWNLOADING = "📥 ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ 📥"
-    STATUS_CLONING = "♻ ️ᴄʟᴏɴɪɴɢ"
-    STATUS_WAITING = "📄 ǫᴜᴇǫᴇᴅ"
-    STATUS_FAILED = "🚫 ғᴀɪʟᴇᴅ"
-    STATUS_PAUSE = "⏸️ ᴘᴀᴜsᴇᴅ"
-    STATUS_ARCHIVING = "🔐 ᴀʀᴄʜɪᴠɪɴɢ"
-    STATUS_EXTRACTING = "📂 ᴇxᴛʀᴀᴄᴛɪɴɢ"
+    STATUS_UPLOADING = "Uploading...📤"
+    STATUS_DOWNLOADING = "Downloading...📥"
+    STATUS_CLONING = "Cloning...♻️"
+    STATUS_WAITING = "Queued...📝"
+    STATUS_FAILED = "Failed 🚫. Cleaning Download..."
+    STATUS_PAUSE = "Paused...⭕️"
+    STATUS_ARCHIVING = "Archiving...🔐"
+    STATUS_EXTRACTING = "Extracting...📂"
+    STATUS_SPLITTING = "Splitting...✂️"
 
 
 PROGRESS_MAX_SIZE = 100 // 8
-#PROGRESS_INCOMPLETE = ['▏', '▎', '▍', '▌', '▋', '▊', '▉']
+# PROGRESS_INCOMPLETE = ['▏', '▎', '▍', '▌', '▋', '▊', '▉']
 
 SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 
@@ -54,7 +55,6 @@ class setInterval:
     def cancel(self):
         self.stopEvent.set()
 
-
 def get_readable_file_size(size_in_bytes) -> str:
     if size_in_bytes is None:
         return '0B'
@@ -67,7 +67,6 @@ def get_readable_file_size(size_in_bytes) -> str:
     except IndexError:
         return 'File too large'
 
-
 def getDownloadByGid(gid):
     with download_dict_lock:
         for dl in download_dict.values():
@@ -77,12 +76,12 @@ def getDownloadByGid(gid):
                 not in [
                     MirrorStatus.STATUS_ARCHIVING,
                     MirrorStatus.STATUS_EXTRACTING,
+                    MirrorStatus.STATUS_SPLITTING,
                 ]
                 and dl.gid() == gid
             ):
                 return dl
     return None
-
 
 def getAllDownload():
     with download_dict_lock:
@@ -93,6 +92,7 @@ def getAllDownload():
                 not in [
                     MirrorStatus.STATUS_ARCHIVING,
                     MirrorStatus.STATUS_EXTRACTING,
+                    MirrorStatus.STATUS_SPLITTING,
                     MirrorStatus.STATUS_CLONING,
                     MirrorStatus.STATUS_UPLOADING,
                 ]
@@ -100,7 +100,6 @@ def getAllDownload():
             ):
                 return dlDetails
     return None
-
 
 def get_progress_bar_string(status):
     completed = status.processed_bytes() / 8
@@ -146,7 +145,7 @@ def progress_bar(percentage):
 def get_readable_message():
     with download_dict_lock:
         msg = ""
-        INDEX = 0
+        start = 0
         if STATUS_LIMIT is not None:
             dick_no = len(download_dict)
             global pages
@@ -154,58 +153,48 @@ def get_readable_message():
             if PAGE_NO > pages and pages != 0:
                 globals()['COUNT'] -= STATUS_LIMIT
                 globals()['PAGE_NO'] -= 1
-        for download in list(download_dict.values()):
-            INDEX += 1
-            if INDEX > COUNT:
-                msg += f"\n<b>ℹ️ Status ℹ️</b>\n<i>{download.status()}</i>"
-                msg += f"\n<b>📁 Filename:</b> <code>{download.name()}</code>"
-                if download.status() not in [
-                    MirrorStatus.STATUS_ARCHIVING,
-                    MirrorStatus.STATUS_EXTRACTING,
-                ]:
-                    msg += f"\n<code>{get_progress_bar_string(download)}</code>\n<b>💯 Percents:</b> <code>{download.progress()}</code>"
-                    if download.status() == MirrorStatus.STATUS_CLONING:
-                        msg += f"\n<b>♻️ Cloned:</b> <code>{get_readable_file_size(download.processed_bytes())}</code>\n<b>⚙️ Engine: ʀᴄʟᴏɴᴇ</b>\n<b>💾 Size</b>: <code>{download.size()}</code>"
-                    elif download.status() == MirrorStatus.STATUS_UPLOADING:
-                        msg += f"\n<b>📤 Uploaded:</b> <code>{get_readable_file_size(download.processed_bytes())}</code>\n<b>⚙️ Engine: ʀᴄʟᴏɴᴇ</b>\n<b>💾 Size</b>: <code>{download.size()}</code>"
-                    else:
-                        msg += f"\n<b>📥 Downloaded:</b> <code>{get_readable_file_size(download.processed_bytes())}</code>\n<b>💾 Size</b>: <code>{download.size()}</code>"
-                    msg += f"\n<b>⚡ Speed:</b> <code>{download.speed()}</code>" \
-                            f"\n<b>⏲️ ETA:</b> <code>{download.eta()}</code> "
-                    # if hasattr(download, 'is_torrent'):
-                    try:
-                        msg += f"\n<b>👥 User:</b> <b>{download.message.from_user.first_name}</b>\n<b>⚠️ Warn:</b><code>/warn {download.message.from_user.id}</code>"
-                    except:
-                        pass
-                    try:
-                        msg += f"\n<b>⚙️ Engine: Aria2</b>\n<b>📶:</b> {download.aria_download().connections}"
-                    except:
-                        pass
-                    try:
-                        msg += f" | <b>🌱:</b> {download.aria_download().num_seeders}"
-                    except:
-                        pass
-                    try:
-                        msg += f"\n<b>⚙️ Engine: Qbit</b>\n<b>🌍:</b> <code>{download.torrent_info().num_leechs}</code>" \
-                            f" | <b>🌱:</b> <code>{download.torrent_info().num_seeds}</code>"
-                    except:
-                        pass
-                    msg += f"\n<b>⛔ Cancel:</b> <code>/{BotCommands.CancelMirror} {download.gid()}</code>"
-                msg += "\n\n"
-                if STATUS_LIMIT is not None and INDEX >= COUNT + STATUS_LIMIT:
-                    break
-        if STATUS_LIMIT is not None:
-            if INDEX > COUNT + STATUS_LIMIT:
-                return None, None
-            if dick_no > STATUS_LIMIT:
-                msg += f"📖 Page: <code>{PAGE_NO}/{pages}</code> | <code>📄 Tasks: {dick_no}</code>\n"
-                buttons = button_build.ButtonMaker()
-                buttons.sbutton("⬅️", "pre")
-                buttons.sbutton("➡️", "nex")
-                button = InlineKeyboardMarkup(buttons.build_menu(2))
-                return msg, button
+            start = COUNT
+        for index, download in enumerate(list(download_dict.values())[start:], start=1):
+            msg += f"<b>Filename:</b> <code>{download.name()}</code>"
+            msg += f"\n<b>Status:</b> <i>{download.status()}</i>"
+            if download.status() not in [
+                MirrorStatus.STATUS_ARCHIVING,
+                MirrorStatus.STATUS_EXTRACTING,
+                MirrorStatus.STATUS_SPLITTING,
+            ]:
+                msg += f"\n<code>{get_progress_bar_string(download)}</code>\n<b>Percent:</b> <code>{download.progress()}</code>"
+                if download.status() == MirrorStatus.STATUS_CLONING:
+                    msg += f"\n<b>Cloned:</b> <code>{get_readable_file_size(download.processed_bytes())}</code>\n<b>Size:</b> <code>{download.size()}</code>"
+                elif download.status() == MirrorStatus.STATUS_UPLOADING:
+                    msg += f"\n<b>Uploaded:</b> <code>{get_readable_file_size(download.processed_bytes())}</code>\n<b>Size:</b> <code>{download.size()}</code>"
+                else:
+                    msg += f"\n<b>Downloaded:</b> <code>{get_readable_file_size(download.processed_bytes())}</code>\n<b>Size:</b> <code>{download.size()}</code>"
+                msg += f"\n<b>Speed:</b> <code>{download.speed()}</code>\n<b>ETA:</b> <code>{download.eta()}</code>"
+                try:
+                    msg += f"\n<b>Engine:</b> Aria2\n<b>📶:</b> <code>{download.aria_download().connections}</code>"
+                except:
+                    pass
+                try:
+                    msg += f" | <b>🌱:</b> <code>{download.aria_download().num_seeders}</code>"
+                except:
+                    pass
+                try:
+                    msg += f"\n<b>Engine:</b> Qbit\n<b>🌍:</b> <code>{download.torrent_info().num_leechs}</code>" \
+                           f" | <b>🌱:</b> <code>{download.torrent_info().num_seeds}</code>"
+                except:
+                    pass
+                msg += f"\n<b>User:</b> <b>{download.message.from_user.first_name}</b>\n<b>Warn:</b><code>/warn {download.message.from_user.id}</code>\n<b>To Stop:</b> <code>/{BotCommands.CancelMirror} {download.gid()}</code>"
+            msg += "\n\n"
+            if STATUS_LIMIT is not None and index == STATUS_LIMIT:
+                break
+        if STATUS_LIMIT is not None and dick_no > STATUS_LIMIT:
+            msg += f"<b>Page:</b> <code>{PAGE_NO}</code>/<code>{pages}</code> | <b>Tasks:</b> <code>{dick_no}</code>\n"
+            buttons = button_build.ButtonMaker()
+            buttons.sbutton("Previous", "pre")
+            buttons.sbutton("Next", "nex")
+            button = InlineKeyboardMarkup(buttons.build_menu(2))
+            return msg, button
         return msg, ""
-
 
 def flip(update, context):
     query = update.callback_query
@@ -226,7 +215,6 @@ def flip(update, context):
             COUNT -= STATUS_LIMIT
             PAGE_NO -= 1
     message_utils.update_all_messages()
-
 
 def check_limit(size, limit, tar_unzip_limit=None, is_tar_ext=False):
     LOGGER.info('Checking File/Folder Size...')
@@ -260,19 +248,15 @@ def get_readable_time(seconds: int) -> str:
     result += f'{seconds}s'
     return result
 
-
 def is_url(url: str):
     url = re.findall(URL_REGEX, url)
     return bool(url)
 
-
 def is_gdrive_link(url: str):
     return "drive.google.com" in url
 
-
 def is_mega_link(url: str):
     return "mega.nz" in url or "mega.co.nz" in url
-
 
 def get_mega_link_type(url: str):
     if "folder" in url:
@@ -283,11 +267,9 @@ def get_mega_link_type(url: str):
         return "folder"
     return "file"
 
-
 def is_magnet(url: str):
     magnet = re.findall(MAGNET_REGEX, url)
     return bool(magnet)
-
 
 def new_thread(fn):
     """To use as decorator to make a function call threaded.
